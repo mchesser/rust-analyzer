@@ -90,7 +90,7 @@ where
     fn collect(&mut self) {
         let crate_graph = self.db.crate_graph();
         let file_id = crate_graph.crate_root(self.krate.crate_id());
-        let raw_items = raw::RawItems::raw_items_query(self.db, file_id);
+        let raw_items = self.db.raw_items(file_id);
         let module_id = self.def_map.root;
         ModCollector {
             def_collector: &mut *self,
@@ -406,7 +406,7 @@ where
                 if let Some(file_id) =
                     resolve_module_declaration(self.def_collector.db, self.file_id, name, is_root)
                 {
-                    let raw_items = raw::RawItems::raw_items_query(self.def_collector.db, file_id);
+                    let raw_items = self.def_collector.db.raw_items(file_id);
                     ModCollector {
                         def_collector: &mut *self.def_collector,
                         module_id,

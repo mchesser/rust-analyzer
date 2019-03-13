@@ -57,6 +57,10 @@ use crate::{
     nameres::{ModuleScope, ResolveMode, ResolvePathResult, PerNs, Edition, ReachedFixedPoint},
 };
 
+pub(crate) use self::{
+    raw::RawItems,
+};
+
 #[derive(Default, Debug)]
 struct ModuleData {
     parent: Option<ModuleId>,

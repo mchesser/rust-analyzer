@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use ra_syntax::{SyntaxNode, TreeArc, SourceFile};
-use ra_db::{SourceDatabase, salsa};
+use ra_db::{SourceDatabase, salsa, FileId};
 
 use crate::{
     MacroCallId, HirFileId,
@@ -11,13 +11,12 @@ use crate::{
     Const, ConstSignature, Static,
     macros::MacroExpansion,
     module_tree::ModuleTree,
-    nameres::{ItemMap, lower::{LoweredModule, ImportSourceMap}},
+    nameres::{Namespace, ItemMap, lower::{LoweredModule, ImportSourceMap}, crate_def_map::RawItems},
     ty::{InferenceResult, Ty, method_resolution::CrateImplBlocks, TypableDef},
     adt::{StructData, EnumData},
     impl_block::{ModuleImplBlocks, ImplSourceMap},
     generics::{GenericParams, GenericDef},
     ids::SourceFileItemId,
-    nameres::Namespace,
     type_ref::TypeRef,
 };
 
@@ -56,6 +55,9 @@ pub trait PersistentHirDatabase: SourceDatabase + AsRef<HirInterner> {
 
     #[salsa::invoke(crate::nameres::lower::LoweredModule::lower_module_query)]
     fn lower_module(&self, module: Module) -> Arc<LoweredModule>;
+
+    #[salsa::invoke(RawItems::raw_items_query)]
+    fn raw_items(&self, file_id: FileId) -> Arc<RawItems>;
 
     #[salsa::invoke(crate::nameres::ItemMap::item_map_query)]
     fn item_map(&self, krate: Crate) -> Arc<ItemMap>;

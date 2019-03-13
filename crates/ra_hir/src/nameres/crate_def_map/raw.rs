@@ -15,8 +15,8 @@ use crate::{
     ids::{SourceFileItemId, SourceFileItems},
 };
 
-#[derive(Default, PartialEq, Eq)]
-pub(crate) struct RawItems {
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct RawItems {
     modules: Arena<Module, ModuleData>,
     imports: Arena<ImportId, ImportData>,
     defs: Arena<Def, DefData>,
@@ -26,18 +26,21 @@ pub(crate) struct RawItems {
 }
 
 impl RawItems {
-    pub(crate) fn items(&self) -> &[RawItem] {
-        &self.items
-    }
-
-    pub(crate) fn raw_items_query(db: &impl PersistentHirDatabase, file_id: FileId) -> RawItems {
+    pub(crate) fn raw_items_query(
+        db: &impl PersistentHirDatabase,
+        file_id: FileId,
+    ) -> Arc<RawItems> {
         let mut collector = RawItemsCollector {
             raw_items: RawItems::default(),
             source_file_items: db.file_items(file_id.into()),
         };
         let source_file = db.parse(file_id);
         collector.process_module(None, &*source_file);
-        collector.raw_items
+        Arc::new(collector.raw_items)
+    }
+
+    pub(crate) fn items(&self) -> &[RawItem] {
+        &self.items
     }
 
     // We can't use queries during name resolution for fear of cycles, so this
@@ -81,7 +84,7 @@ impl Index<Macro> for RawItems {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub(crate) enum RawItem {
     Module(Module),
     Import(ImportId),
@@ -89,11 +92,11 @@ pub(crate) enum RawItem {
     Macro(Macro),
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct Module(RawId);
 impl_arena_id!(Module);
 
-#[derive(PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ModuleData {
     Declaration { name: Name },
     Definition { name: Name, items: Vec<RawItem> },
@@ -102,11 +105,11 @@ pub(crate) enum ModuleData {
 pub(crate) use crate::nameres::lower::ImportId;
 pub(super) use crate::nameres::lower::ImportData;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct Def(RawId);
 impl_arena_id!(Def);
 
-#[derive(PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) struct DefData {
     pub(crate) source_item_id: SourceFileItemId,
     pub(crate) name: Name,
@@ -124,11 +127,11 @@ pub(crate) enum DefKind {
     TypeAlias,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct Macro(RawId);
 impl_arena_id!(Macro);
 
-#[derive(PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) struct MacroData {
     pub(crate) source_item_id: SourceFileItemId,
     pub(crate) path: Path,
