@@ -11,7 +11,7 @@ use crate::{
     Const, ConstSignature, Static,
     macros::MacroExpansion,
     module_tree::ModuleTree,
-    nameres::{Namespace, ItemMap, lower::{LoweredModule, ImportSourceMap}, crate_def_map::RawItems},
+    nameres::{Namespace, ItemMap, lower::{LoweredModule, ImportSourceMap}, crate_def_map::{RawItems, CrateDefMap}},
     ty::{InferenceResult, Ty, method_resolution::CrateImplBlocks, TypableDef},
     adt::{StructData, EnumData},
     impl_block::{ModuleImplBlocks, ImplSourceMap},
@@ -61,6 +61,9 @@ pub trait PersistentHirDatabase: SourceDatabase + AsRef<HirInterner> {
 
     #[salsa::invoke(crate::nameres::ItemMap::item_map_query)]
     fn item_map(&self, krate: Crate) -> Arc<ItemMap>;
+
+    #[salsa::invoke(CrateDefMap::crate_def_map_query)]
+    fn crate_def_map(&self, krate: Crate) -> Arc<CrateDefMap>;
 
     #[salsa::invoke(crate::module_tree::ModuleTree::module_tree_query)]
     fn module_tree(&self, krate: Crate) -> Arc<ModuleTree>;

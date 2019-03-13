@@ -50,6 +50,8 @@ use rustc_hash::FxHashMap;
 use test_utils::tested_by;
 use ra_arena::Arena;
 
+use std::sync::Arc;
+
 use crate::{
     Name, Module, Path, PathKind, ModuleDef, Crate,
     PersistentHirDatabase,
@@ -57,11 +59,9 @@ use crate::{
     nameres::{ModuleScope, ResolveMode, ResolvePathResult, PerNs, Edition, ReachedFixedPoint},
 };
 
-pub(crate) use self::{
-    raw::RawItems,
-};
+pub(crate) use self::raw::RawItems;
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, PartialEq, Eq)]
 struct ModuleData {
     parent: Option<ModuleId>,
     children: FxHashMap<Name, ModuleId>,
@@ -69,8 +69,8 @@ struct ModuleData {
 }
 
 /// Contans all top-level defs from a macro-expanded crate
-#[derive(Debug)]
-pub(crate) struct CrateDefMap {
+#[derive(Debug, PartialEq, Eq)]
+pub struct CrateDefMap {
     krate: Crate,
     edition: Edition,
     /// The prelude module for this crate. This either comes from an import
@@ -91,9 +91,30 @@ impl std::ops::Index<ModuleId> for CrateDefMap {
 }
 
 impl CrateDefMap {
+    pub(crate) fn crate_def_map_query(
+        db: &impl PersistentHirDatabase,
+        krate: Crate,
+    ) -> Arc<CrateDefMap> {
+        let def_map = {
+            let edition = krate.edition(db);
+            let mut modules: Arena<ModuleId, ModuleData> = Arena::default();
+            let root = modules.alloc(ModuleData::default());
+            CrateDefMap {
+                krate,
+                edition,
+                extern_prelude: FxHashMap::default(),
+                prelude: None,
+                root,
+                modules,
+                public_macros: FxHashMap::default(),
+            }
+        };
+        let def_map = collector::collect_defs(db, def_map);
+        Arc::new(def_map)
+    }
+
     // Returns Yes if we are sure that additions to `ItemMap` wouldn't change
     // the result.
-    #[allow(unused)]
     fn resolve_path_fp(
         &self,
         db: &impl PersistentHirDatabase,

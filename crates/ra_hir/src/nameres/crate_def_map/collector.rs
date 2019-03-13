@@ -1,12 +1,9 @@
-use std::sync::Arc;
-
 use rustc_hash::FxHashMap;
-use ra_arena::Arena;
 use test_utils::tested_by;
 
 use crate::{
     Function, Module, Struct, Enum, Const, Static, Trait, TypeAlias,
-    Crate, PersistentHirDatabase, HirFileId, Name, Path,
+    PersistentHirDatabase, HirFileId, Name, Path,
     KnownName,
     nameres::{Resolution, PerNs, ModuleDef, ReachedFixedPoint, ResolveMode},
     ids::{AstItemDef, LocationCtx, MacroCallLoc, SourceItemId, MacroCallId},
@@ -16,27 +13,12 @@ use crate::{
 use super::{CrateDefMap, ModuleId, ModuleData, raw};
 
 #[allow(unused)]
-pub(crate) fn crate_def_map_query(
+pub(super) fn collect_defs(
     db: &impl PersistentHirDatabase,
-    krate: Crate,
-) -> Arc<CrateDefMap> {
-    let mut def_map = {
-        let edition = krate.edition(db);
-        let mut modules: Arena<ModuleId, ModuleData> = Arena::default();
-        let root = modules.alloc(ModuleData::default());
-        CrateDefMap {
-            krate,
-            edition,
-            extern_prelude: FxHashMap::default(),
-            prelude: None,
-            root,
-            modules,
-            public_macros: FxHashMap::default(),
-        }
-    };
-
+    mut def_map: CrateDefMap,
+) -> CrateDefMap {
     // populate external prelude
-    for dep in krate.dependencies(db) {
+    for dep in def_map.krate.dependencies(db) {
         log::debug!("crate dep {:?} -> {:?}", dep.name, dep.krate);
         if let Some(module) = dep.krate.root_module(db) {
             def_map.extern_prelude.insert(dep.name.clone(), module.into());
@@ -52,7 +34,6 @@ pub(crate) fn crate_def_map_query(
 
     let mut collector = DefCollector {
         db,
-        krate,
         def_map,
         glob_imports: FxHashMap::default(),
         unresolved_imports: Vec::new(),
@@ -60,14 +41,12 @@ pub(crate) fn crate_def_map_query(
         global_macro_scope: FxHashMap::default(),
     };
     collector.collect();
-    let def_map = collector.finish();
-    Arc::new(def_map)
+    collector.finish()
 }
 
 /// Walks the tree of module recursively
 struct DefCollector<DB> {
     db: DB,
-    krate: Crate,
     def_map: CrateDefMap,
     glob_imports: FxHashMap<ModuleId, Vec<(ModuleId, raw::ImportId)>>,
     unresolved_imports: Vec<(ModuleId, raw::ImportId, raw::ImportData)>,
@@ -89,7 +68,7 @@ where
 {
     fn collect(&mut self) {
         let crate_graph = self.db.crate_graph();
-        let file_id = crate_graph.crate_root(self.krate.crate_id());
+        let file_id = crate_graph.crate_root(self.def_map.krate.crate_id());
         let raw_items = self.db.raw_items(file_id);
         let module_id = self.def_map.root;
         ModCollector {
@@ -184,7 +163,7 @@ where
                     if import.is_prelude {
                         tested_by!(std_prelude);
                         self.def_map.prelude = Some(m);
-                    } else if m.krate != self.krate {
+                    } else if m.krate != self.def_map.krate {
                         tested_by!(glob_across_crates);
                         // glob import from other crate => we can just import everything once
                         let item_map = self.db.item_map(m.krate);
@@ -243,7 +222,7 @@ where
             log::debug!("resolved import {:?} ({:?}) to {:?}", name, import, def);
 
             // extern crates in the crate root are special-cased to insert entries into the extern prelude: rust-lang/rust#54658
-            if let Some(root_module) = self.krate.root_module(self.db) {
+            if let Some(root_module) = self.def_map.krate.root_module(self.db) {
                 if import.is_extern_crate && module_id == root_module.module_id {
                     if let Some(def) = def.take_types() {
                         self.def_map.extern_prelude.insert(name.clone(), def);
@@ -324,8 +303,7 @@ where
                 Some(it) => it,
                 _ => return true,
             };
-            // FIXME: this should be a proper query
-            let def_map = crate_def_map_query(self.db, krate);
+            let def_map = self.db.crate_def_map(krate);
             let rules = def_map.public_macros.get(&path.segments[1].name).cloned();
             resolved.push((*module_id, *call_id, rules, tt.clone()));
             false
@@ -427,7 +405,7 @@ where
     }
 
     fn define_def(&mut self, def: &raw::DefData) {
-        let module = Module { krate: self.def_collector.krate, module_id: self.module_id };
+        let module = Module { krate: self.def_collector.def_map.krate, module_id: self.module_id };
         let ctx = LocationCtx::new(self.def_collector.db, module, self.file_id.into());
         macro_rules! id {
             () => {
@@ -462,7 +440,7 @@ where
 
         let source_item_id = SourceItemId { file_id: self.file_id, item_id: mac.source_item_id };
         let macro_call_id = MacroCallLoc {
-            module: Module { krate: self.def_collector.krate, module_id: self.module_id },
+            module: Module { krate: self.def_collector.def_map.krate, module_id: self.module_id },
             source_item_id,
         }
         .id(self.def_collector.db);
